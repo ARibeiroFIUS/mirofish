@@ -23,6 +23,21 @@ from ..utils.zep_paging import fetch_all_nodes, fetch_all_edges
 
 logger = get_logger('mirofish.zep_tools')
 
+# Zep Cloud Graph Search: erro 400 se query > 400 caracteres
+ZEP_GRAPH_SEARCH_QUERY_MAX = 400
+
+
+def _clip_zep_graph_search_query(query: str, max_len: int = ZEP_GRAPH_SEARCH_QUERY_MAX) -> str:
+    """Encurta a query para o limite da API Zep (semantic graph search)."""
+    if not query or len(query) <= max_len:
+        return query
+    clipped = query[:max_len]
+    for sep in ("\n", ". ", "。", " ", "，", ","):
+        idx = clipped.rfind(sep)
+        if idx > max_len * 0.55:
+            return clipped[:idx].strip()
+    return clipped.rstrip()
+
 
 @dataclass
 class SearchResult:
@@ -484,13 +499,21 @@ class ZepToolsService:
             SearchResult: 搜索结果
         """
         logger.info(t("console.graphSearch", graphId=graph_id, query=query[:50]))
+        api_query = _clip_zep_graph_search_query(query)
+        if len(api_query) < len(query):
+            logger.info(
+                "Zep graph search query clipped: %s -> %s chars (max %s)",
+                len(query),
+                len(api_query),
+                ZEP_GRAPH_SEARCH_QUERY_MAX,
+            )
         
         # 尝试使用Zep Cloud Search API
         try:
             search_results = self._call_with_retry(
                 func=lambda: self.client.graph.search(
                     graph_id=graph_id,
-                    query=query,
+                    query=api_query,
                     limit=limit,
                     scope=scope,
                     reranker="cross_encoder"
@@ -713,6 +736,29 @@ class ZepToolsService:
         logger.info(t("console.fetchedEdges", count=len(result)))
         return result
     
+    def _compute_graph_statistics(
+        self,
+        graph_id: str,
+        nodes: List[NodeInfo],
+        edges: List[EdgeInfo],
+    ) -> Dict[str, Any]:
+        """Estatísticas a partir de listas já carregadas (evita chamadas Zep duplicadas)."""
+        entity_types: Dict[str, int] = {}
+        for node in nodes:
+            for label in node.labels:
+                if label not in ["Entity", "Node"]:
+                    entity_types[label] = entity_types.get(label, 0) + 1
+        relation_types: Dict[str, int] = {}
+        for edge in edges:
+            relation_types[edge.name] = relation_types.get(edge.name, 0) + 1
+        return {
+            "graph_id": graph_id,
+            "total_nodes": len(nodes),
+            "total_edges": len(edges),
+            "entity_types": entity_types,
+            "relation_types": relation_types,
+        }
+    
     def get_node_detail(self, node_uuid: str) -> Optional[NodeInfo]:
         """
         获取单个节点的详细信息
@@ -866,26 +912,7 @@ class ZepToolsService:
         
         nodes = self.get_all_nodes(graph_id)
         edges = self.get_all_edges(graph_id)
-        
-        # 统计实体类型分布
-        entity_types = {}
-        for node in nodes:
-            for label in node.labels:
-                if label not in ["Entity", "Node"]:
-                    entity_types[label] = entity_types.get(label, 0) + 1
-        
-        # 统计关系类型分布
-        relation_types = {}
-        for edge in edges:
-            relation_types[edge.name] = relation_types.get(edge.name, 0) + 1
-        
-        return {
-            "graph_id": graph_id,
-            "total_nodes": len(nodes),
-            "total_edges": len(edges),
-            "entity_types": entity_types,
-            "relation_types": relation_types
-        }
+        return self._compute_graph_statistics(graph_id, nodes, edges)
     
     def get_simulation_context(
         self, 
@@ -915,11 +942,10 @@ class ZepToolsService:
             limit=limit
         )
         
-        # 获取图谱统计
-        stats = self.get_graph_statistics(graph_id)
-        
-        # 获取所有实体节点
+        # Uma passagem por nós/arestas: estatísticas + lista de entidades (menos chamadas Zep / rate limit)
         all_nodes = self.get_all_nodes(graph_id)
+        all_edges = self.get_all_edges(graph_id)
+        stats = self._compute_graph_statistics(graph_id, all_nodes, all_edges)
         
         # 筛选有实际类型的实体（非纯Entity节点）
         entities = []
