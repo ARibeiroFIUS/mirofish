@@ -35,6 +35,34 @@ class Config:
     # Zep配置
     ZEP_API_KEY = os.environ.get('ZEP_API_KEY')
     
+    # Índice SQLite do histórico (metadados enriquecidos; opcional)
+    _default_history_db = os.path.join(
+        os.path.dirname(__file__), '../instance/mirofish_history.sqlite'
+    )
+    HISTORY_INDEX_DB_PATH = os.environ.get(
+        'HISTORY_INDEX_DB_PATH', os.path.abspath(_default_history_db)
+    )
+    # Cópia do índice SQLite para pasta fora do repo (HD externo, nuvem sincronizada, etc.)
+    MIROFISH_EXTERNAL_BACKUP_DIR = (os.environ.get('MIROFISH_EXTERNAL_BACKUP_DIR') or '').strip()
+    MIROFISH_EXTERNAL_BACKUP_VERSIONED = (
+        os.environ.get('MIROFISH_EXTERNAL_BACKUP_VERSIONED', '').lower() in ('1', 'true', 'yes')
+    )
+    # Cópia do índice dentro do repositório (padrão: <repo>/backups/history_index/)
+    _repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
+    _default_project_backup = os.path.join(_repo_root, 'backups', 'history_index')
+    _pb = (os.environ.get('MIROFISH_PROJECT_BACKUP_DIR') or '').strip()
+    MIROFISH_PROJECT_BACKUP_DIR = (
+        os.path.abspath(os.path.expanduser(_pb))
+        if _pb
+        else os.path.abspath(_default_project_backup)
+    )
+    MIROFISH_DISABLE_PROJECT_BACKUP = (
+        os.environ.get('MIROFISH_DISABLE_PROJECT_BACKUP', '').lower() in ('1', 'true', 'yes')
+    )
+    MIROFISH_PROJECT_BACKUP_VERSIONED = (
+        os.environ.get('MIROFISH_PROJECT_BACKUP_VERSIONED', '').lower() in ('1', 'true', 'yes')
+    )
+    
     # 文件上传配置
     MAX_CONTENT_LENGTH = 50 * 1024 * 1024  # 50MB
     UPLOAD_FOLDER = os.path.join(os.path.dirname(__file__), '../uploads')

@@ -16,6 +16,11 @@ from ..services.simulation_runner import SimulationRunner, RunnerStatus
 from ..utils.logger import get_logger
 from ..utils.locale import t, get_locale, set_locale
 from ..models.project import ProjectManager
+from ..services.history_index_db import (
+    replace_all_from_enriched,
+    fetch_persisted,
+    get_db_file_path,
+)
 
 logger = get_logger('mirofish.api.simulation')
 
@@ -972,6 +977,11 @@ def get_simulation_history():
             
             enriched_simulations.append(sim_dict)
         
+        try:
+            replace_all_from_enriched(enriched_simulations)
+        except Exception as sync_err:
+            logger.warning("history_index_db sync skipped: %s", sync_err)
+        
         return jsonify({
             "success": True,
             "data": enriched_simulations,
@@ -984,6 +994,30 @@ def get_simulation_history():
             "success": False,
             "error": str(e),
             "traceback": traceback.format_exc()
+        }), 500
+
+
+@simulation_bp.route('/history/persisted', methods=['GET'])
+def get_simulation_history_persisted():
+    """
+    Histórico lido apenas do SQLite (último snapshot gravado por GET /history).
+    Útil para agentes e backup sem revarrer disco.
+    """
+    try:
+        limit = request.args.get('limit', 50, type=int)
+        data = fetch_persisted(limit=limit)
+        return jsonify({
+            "success": True,
+            "data": data,
+            "count": len(data),
+            "db_path": get_db_file_path(),
+        })
+    except Exception as e:
+        logger.error("读取持久化历史失败: %s", str(e))
+        return jsonify({
+            "success": False,
+            "error": str(e),
+            "traceback": traceback.format_exc(),
         }), 500
 
 

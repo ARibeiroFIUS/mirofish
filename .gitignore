@@ -58,3 +58,11 @@ backend/uploads/
 
 # Docker 数据
 data/
+
+# SQLite de índice de histórico (opcional: git add -f para versionar snapshot)
+backend/instance/mirofish_history.sqlite
+
+# Cópia do índice na pasta do projeto (gerado localmente; contém caminhos absolutos)
+backups/history_index/*.sqlite
+backups/history_index/mirofish_history_manifest.json
+backups/history_index/snapshots/
