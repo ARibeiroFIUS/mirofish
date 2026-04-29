@@ -26,9 +26,8 @@ from graphiti_core.search.search_config_recipes import (
     NODE_HYBRID_SEARCH_RRF,
     EDGE_HYBRID_SEARCH_RRF,
 )
-from graphiti_core.llm_client.config import LLMConfig
-from graphiti_core.llm_client.gemini_client import GeminiClient
-from graphiti_core.embedder.gemini import GeminiEmbedder, GeminiEmbedderConfig
+from graphiti_core.llm_client import LLMConfig, OpenAIClient
+from graphiti_core.embedder import OpenAIEmbedder, OpenAIEmbedderConfig
 from graphiti_core.cross_encoder.client import CrossEncoderClient
 
 from ..config import Config
@@ -37,17 +36,12 @@ from ..utils.logger import get_logger
 logger = get_logger('mirofish.graphiti_adapter')
 
 
-class _GeminiReranker(CrossEncoderClient):
-    """Simple reranker using Gemini — returns passages sorted by relevance."""
-
-    def __init__(self, client: GeminiClient):
-        self._client = client
+class _NoOpCrossEncoder(CrossEncoderClient):
+    """Rerank estável entre provedores — mantém ordem original (compatível OpenAI/other)."""
 
     async def rank(self, query: str, passages: list[str]) -> list[tuple[str, float]]:
         if not passages:
             return []
-        # Return in original order — Gemini doesn't support logprobs for reranking
-        # This is a no-op reranker: correct but unoptimized ordering
         return [(p, 1.0 - i * 0.01) for i, p in enumerate(passages)]
 
 # ---------------------------------------------------------------------------
@@ -95,15 +89,17 @@ def _get_graphiti() -> Graphiti:
                 llm_cfg = LLMConfig(
                     api_key=Config.LLM_API_KEY,
                     model=Config.LLM_MODEL_NAME,
+                    base_url=(Config.LLM_BASE_URL or None),
                 )
-                llm_client = GeminiClient(config=llm_cfg)
-                embedder = GeminiEmbedder(
-                    config=GeminiEmbedderConfig(
+                llm_client = OpenAIClient(config=llm_cfg)
+                embedder = OpenAIEmbedder(
+                    config=OpenAIEmbedderConfig(
                         api_key=Config.LLM_API_KEY,
+                        base_url=(Config.LLM_BASE_URL or None),
                         embedding_model=Config.EMBEDDING_MODEL,
                     )
                 )
-                cross_encoder = _GeminiReranker(llm_client)
+                cross_encoder = _NoOpCrossEncoder()
                 g = Graphiti(
                     Config.NEO4J_URI,
                     Config.NEO4J_USER,
