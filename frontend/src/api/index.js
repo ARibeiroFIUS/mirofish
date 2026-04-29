@@ -14,6 +14,10 @@ const service = axios.create({
 // 请求拦截器
 service.interceptors.request.use(
   config => {
+    // FormData: o browser define multipart/form-data + boundary; não forçar json nem multipart sem boundary
+    if (typeof FormData !== 'undefined' && config.data instanceof FormData) {
+      delete config.headers['Content-Type']
+    }
     return config
   },
   error => {
